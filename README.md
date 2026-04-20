@@ -1,5 +1,15 @@
 # homelab
 
+[![lint](https://github.com/AwpDemon/homelab/actions/workflows/lint.yml/badge.svg)](https://github.com/AwpDemon/homelab/actions/workflows/lint.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+**Highlights**
+- Public-facing services behind a **Cloudflare Tunnel** — zero inbound ports open on my router, real IP never leaves the LAN.
+- **Authentik IdP** centralizes auth for ~10 self-hosted apps; one place for MFA, session revocation, OIDC + forward-auth for the ones that don't speak OIDC.
+- Survived an **L7 attack on the public Minecraft server** — kept it online with a protocol-aware proxy (Velocity), backend firewall-locked to the proxy's IPs, and handshake-rate limits that actually work (Mojang's built-in whitelist kicks *after* the handshake, too late).
+- **OpenAI-compatible local LLM endpoint** so any tool that expects ChatGPT/Claude can point at `localhost` with zero glue code.
+- One-shot health check script (`scripts/lab-health.py`, stdlib only) that speaks the Minecraft protocol handshake, not just TCP.
+
 Notes from running a public-facing homelab out of my apartment. Not a runbook — I keep the actual configs and IPs private. This is the stuff I figured out the hard way and would want to remember if I were setting up from scratch.
 
 ## What this is
