@@ -1,0 +1,53 @@
+# Authentik forward-auth outpost — docker-compose snippet (sanitized)
+#
+# This is the shape of the outpost I run in front of non-OIDC apps.
+# The outpost talks to the main Authentik server over an internal token
+# and exposes a forward-auth endpoint that a reverse proxy (caddy, nginx,
+# traefik) asks before letting a request through.
+#
+# All secrets are placeholders — do not commit the real outpost token.
+
+services:
+  authentik-outpost:
+    image: ghcr.io/goauthentik/proxy:latest
+    restart: unless-stopped
+    environment:
+      AUTHENTIK_HOST: https://auth.<your-domain>
+      AUTHENTIK_INSECURE: "false"
+      AUTHENTIK_TOKEN: <OUTPOST-TOKEN-FROM-ADMIN-UI>
+      # A couple of headers the outpost should forward to the app so
+      # downstream apps can key off the authenticated user.
+      AUTHENTIK_HOST_BROWSER: https://auth.<your-domain>
+    ports:
+      - "9000:9000"   # HTTP
+      - "9443:9443"   # HTTPS
+    networks:
+      - internal
+
+  # One of the apps behind the outpost. Caddy runs the forward-auth dance.
+  # The app itself has no login page.
+  internal-app:
+    image: registry.example/internal-app:latest
+    restart: unless-stopped
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+
+# --- Caddyfile snippet for forward-auth ---
+# :443 {
+#   handle_path /outpost.goauthentik.io/* {
+#     reverse_proxy http://authentik-outpost:9000
+#   }
+#   forward_auth authentik-outpost:9000 {
+#     uri /outpost.goauthentik.io/auth/caddy
+#     copy_headers X-authentik-username X-authentik-groups X-authentik-email
+#   }
+#   reverse_proxy internal-app:8080
+# }
+
+# Cookie-scoping gotcha: the outpost needs to be on the same domain (or
+# a parent of) the apps it guards, else the session cookie set by
+# Authentik won't propagate and you'll get infinite redirect loops.

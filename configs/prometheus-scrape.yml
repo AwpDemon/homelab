@@ -1,0 +1,41 @@
+# Prometheus scrape config (sanitized) — prometheus.yml
+#
+# Stripped of the storage / alertmanager blocks; this is just the scrape
+# section. Targets are internal DNS names inside the LAN.
+
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+  external_labels:
+    cluster: homelab
+
+scrape_configs:
+  - job_name: node
+    static_configs:
+      - targets:
+          - host1.lab.local:9100
+          - host2.lab.local:9100
+
+  - job_name: cloudflared
+    static_configs:
+      - targets: ["localhost:2000"]
+
+  - job_name: caddy
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["caddy.lab.local:2019"]
+
+  - job_name: authentik
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["authentik.lab.local:9301"]
+
+  - job_name: minecraft
+    # mc-exporter — 3rd-party, exposes TPS, player count, chunks loaded
+    static_configs:
+      - targets: ["mc-exporter.lab.local:9150"]
+
+  - job_name: nvidia
+    # GPU metrics for the local LLM host
+    static_configs:
+      - targets: ["llm.lab.local:9835"]

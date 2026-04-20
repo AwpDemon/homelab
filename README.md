@@ -6,6 +6,60 @@ Notes from running a public-facing homelab out of my apartment. Not a runbook �
 
 A handful of self-hosted services (media, monitoring, a few internal web apps, a local LLM stack, a public Minecraft server) running on commodity hardware at my place. Domain is `awpdemon.com`. Public entry points sit behind Cloudflare. Anything sensitive sits behind SSO.
 
+## Topology
+
+```mermaid
+flowchart LR
+    subgraph Internet["Public internet"]
+        USER[Browser / client]
+        MC[Minecraft client]
+    end
+
+    subgraph CF["Cloudflare edge"]
+        PROXY[HTTP proxy + WAF + DDoS]
+        SPECTRUM[TCP proxy]
+        DNS[DNS: awpdemon.com]
+    end
+
+    subgraph Lab["Apartment LAN (private)"]
+        direction TB
+        TUNNEL[cloudflared tunnel]
+        AUTH[Authentik IdP + outposts]
+
+        subgraph Apps["Protected apps"]
+            MEDIA[Media stack]
+            MONITOR[Grafana / Prometheus]
+            INTERNAL[Internal web apps]
+            LLM[Local LLM<br/>OpenAI-compatible]
+        end
+
+        MCPROXY[Minecraft-aware proxy]
+        MCBACKEND[Minecraft backend<br/>firewall-locked to proxy]
+    end
+
+    USER -->|HTTPS| PROXY
+    PROXY -->|outbound-only tunnel| TUNNEL
+    TUNNEL --> AUTH
+    AUTH -->|OIDC / forward-auth| Apps
+
+    MC -->|TCP 25565| SPECTRUM
+    SPECTRUM --> MCPROXY
+    MCPROXY --> MCBACKEND
+
+    USER -.-> DNS
+    DNS -.-> PROXY
+    DNS -.-> SPECTRUM
+
+    classDef edge fill:#f2c811,stroke:#b08400,color:#333
+    classDef private fill:#d6eaf8,stroke:#2874a6,color:#1b4f72
+    classDef mc fill:#ffe5e5,stroke:#c0392b,color:#7b241c
+    class CF edge
+    class Lab,Apps private
+    class MCPROXY,MCBACKEND mc
+```
+
+No inbound ports from the public internet. Everything comes in either through the Cloudflare HTTP proxy (for `*.awpdemon.com`) or the TCP proxy (for Minecraft) and reaches the LAN through the outbound-only `cloudflared` tunnel.
+
 ## The problems I had to solve
 
 ### 1. Getting services reachable from the internet without exposing my home IP
@@ -47,6 +101,27 @@ For small automation (summarize a doc, draft a shell command, throw ideas at som
 Stack is intentionally boring: a small serving layer (chose something that exposes an OpenAI-compatible API so tools that expect ChatGPT or Claude can point at `localhost` without rewriting), a couple of model weights sized for my VRAM, and a tmux session that stays up. Nothing clever, but the OpenAI-compatible endpoint is the unlock — it means a dozen CLI tools "just work" without any custom glue.
 
 Trade-off I hadn't appreciated: context window costs VRAM *nonlinearly*. Doubling context can quarter your usable batch size. For short-turn tasks this is fine; for long-doc work you're going back to a paid model anyway.
+
+## Sanitized configs
+
+A few reference configs in `configs/` that show the shape without exposing credentials or internal IPs. They're commit-safe — all secrets, tunnel UUIDs, and IPs are placeholders. The actual values live in a `.env` file that never leaves the host.
+
+- [`configs/cloudflared-sanitized.yml`](configs/cloudflared-sanitized.yml) — tunnel ingress rules with timeouts and the `/metrics` endpoint exposed to Prometheus
+- [`configs/authentik-proxy-outpost.yml`](configs/authentik-proxy-outpost.yml) — docker-compose for the forward-auth outpost + Caddyfile snippet showing the forward-auth dance
+- [`configs/mc-proxy-velocity.toml`](configs/mc-proxy-velocity.toml) — Velocity config with the rate-limits, compression thresholds, and PROXY-protocol passthrough I tuned after the L7 event
+- [`configs/prometheus-scrape.yml`](configs/prometheus-scrape.yml) — scrape targets for node exporters, Authentik, cloudflared, `mc-exporter`, and the NVIDIA GPU exporter
+
+## Health check script
+
+`scripts/lab-health.py` is a one-shot health poller — what I run from cron to get an alert if anything important is down. Checks:
+
+- HTTP reachability through the Cloudflare tunnel
+- Authentik's login flow endpoint returns 200
+- `cloudflared` `/metrics` reports >0 connected tunnel connections
+- Minecraft port replies to a proper protocol handshake (not just TCP SYN-ACK — a half-alive server will accept TCP but never respond)
+- Local LLM's OpenAI-compatible `/v1/models` has at least one model loaded
+
+Exits nonzero if any check is CRIT, so cron's mail-on-failure does the alerting. `--json` emits machine-readable output for Prometheus `textfile` collection. Written in stdlib only — no pip install, runs on any Python 3.8+ host.
 
 ## What I took away
 

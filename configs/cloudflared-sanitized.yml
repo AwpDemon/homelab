@@ -1,0 +1,46 @@
+# cloudflared config (sanitized) — /etc/cloudflared/config.yml
+#
+# The tunnel UUID and credentials file are what bind this daemon to the
+# tunnel I pre-created in Cloudflare Zero Trust. Commit-safe placeholders
+# below — the real credentials file is a JSON blob cloudflared writes
+# during `cloudflared tunnel login` and it never leaves the host.
+#
+# Ingress rules are order-sensitive: first match wins, so put specific
+# hostnames before catchalls.
+
+tunnel: <YOUR-TUNNEL-UUID-HERE>
+credentials-file: /etc/cloudflared/<YOUR-TUNNEL-UUID>.json
+
+# Observability — cloudflared exposes its own /metrics endpoint
+metrics: 127.0.0.1:2000
+
+# Timeouts. Defaults are fine; I bump connect a bit because my ISP's
+# first-byte latency was occasionally over the default on cold starts.
+originRequest:
+  connectTimeout: 30s
+  tlsTimeout: 10s
+  tcpKeepAlive: 30s
+  keepAliveConnections: 64
+  keepAliveTimeout: 90s
+
+ingress:
+  # Everything that's already behind Authentik — the outpost is on the
+  # same private network and adds the auth layer before the app sees
+  # the request.
+  - hostname: auth.<your-domain>
+    service: http://localhost:9000
+    originRequest:
+      noTLSVerify: true      # outpost terminates TLS internally
+
+  - hostname: home.<your-domain>
+    service: http://localhost:8080
+
+  - hostname: grafana.<your-domain>
+    service: http://localhost:3000
+
+  - hostname: llm.<your-domain>
+    service: http://localhost:8001   # OpenAI-compatible endpoint
+
+  # Catchall — anything that isn't an explicit ingress rule returns 404
+  # rather than leaking through to the default origin.
+  - service: http_status:404
