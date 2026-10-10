@@ -1,22 +1,20 @@
 %% Homelab edge & internal service topology
 %% Everything left of the tunnel sits in Cloudflare's network; everything
-%% right of it is my apartment LAN. The host box itself is omitted for clarity.
+%% right of it is a private LAN. The host box itself is omitted for clarity.
 
 flowchart LR
     subgraph Internet["Public internet"]
         USER[Browser / client]
-        MC[Minecraft client]
     end
 
     subgraph CF["Cloudflare edge"]
         PROXY[HTTP proxy + WAF + DDoS]
-        SPECTRUM[TCP spectrum / proxy]
-        DNS[DNS: awpdemon.com]
+        DNS[DNS for the lab's domain]
     end
 
-    subgraph Lab["Apartment LAN (private)"]
+    subgraph Lab["Private LAN"]
         direction TB
-        TUNNEL[cloudflared tunnel]
+        TUNNEL[cloudflared tunnel<br/>outbound-only]
         AUTH[Authentik IdP + outposts]
 
         subgraph Apps["Protected apps"]
@@ -25,27 +23,16 @@ flowchart LR
             INTERNAL[Internal web apps]
             LLM[Local LLM<br/>OpenAI-compatible]
         end
-
-        MCPROXY[Minecraft-aware proxy<br/>handshake + rate limit]
-        MCBACKEND[Minecraft backend<br/>firewall-locked to proxy IPs]
     end
 
     USER -->|HTTPS| PROXY
     PROXY -->|outbound-only tunnel| TUNNEL
     TUNNEL --> AUTH
     AUTH -->|OIDC / forward-auth| Apps
-
-    MC -->|TCP 25565| SPECTRUM
-    SPECTRUM --> MCPROXY
-    MCPROXY --> MCBACKEND
-
     USER -.-> DNS
     DNS -.-> PROXY
-    DNS -.-> SPECTRUM
 
     classDef edge fill:#f2c811,stroke:#b08400,color:#333
     classDef private fill:#d6eaf8,stroke:#2874a6,color:#1b4f72
-    classDef mc fill:#ffe5e5,stroke:#c0392b,color:#7b241c
     class CF edge
     class Lab,Apps private
-    class MCPROXY,MCBACKEND mc

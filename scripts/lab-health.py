@@ -11,16 +11,12 @@ Checks:
   * HTTPS endpoint reachable via the Cloudflare Tunnel
   * Authentik /if/flow/default-authentication-flow/ returns 200
   * cloudflared metrics endpoint exposes a connected tunnel
-  * Minecraft port answers a server-list ping within 3 seconds
   * Local LLM's /v1/models endpoint returns at least one model
 """
 
 import argparse
 import json
-import socket
-import struct
 import sys
-import time
 from urllib import request, error
 
 TIMEOUT = 5
@@ -58,50 +54,6 @@ def check_cloudflared_metrics(url):
     return WARN, "metric not found"
 
 
-def check_minecraft(host, port=25565):
-    """Server-list ping — the handshake+status request is the cheapest
-    reachability test and it matches how real clients probe."""
-    try:
-        s = socket.create_connection((host, port), timeout=TIMEOUT)
-    except Exception as e:
-        return CRIT, f"connect: {e}"
-    try:
-        # Varint-prefixed handshake + status request.
-        def varint(v):
-            out = b""
-            while True:
-                b = v & 0x7F
-                v >>= 7
-                if v:
-                    out += bytes([b | 0x80])
-                else:
-                    out += bytes([b])
-                    return out
-
-        def packet(pid, data):
-            inner = varint(pid) + data
-            return varint(len(inner)) + inner
-
-        handshake = (
-            varint(-1)[:0]  # placeholder, will compute
-        )
-        # Actually build it properly: protocol version 0, addr, port, next-state=1
-        addr = host.encode()
-        payload = varint(0) + varint(len(addr)) + addr + struct.pack(">H", port) + varint(1)
-        s.sendall(varint(len(payload)) + payload)
-        s.sendall(varint(1) + bytes([0x00]))  # status request
-        t0 = time.time()
-        data = s.recv(1024)
-        dt = (time.time() - t0) * 1000
-        if data:
-            return OK, f"responded in {dt:.0f} ms"
-        return CRIT, "empty response"
-    except Exception as e:
-        return CRIT, f"handshake: {e}"
-    finally:
-        s.close()
-
-
 def check_llm_models(url):
     """OpenAI-compatible endpoint. If it has at least one model loaded,
     the server is alive and responsive."""
@@ -118,7 +70,6 @@ CHECKS = [
     ("home.<domain>", check_https, "https://home.example/"),
     ("auth",          check_https, "https://auth.example/if/flow/default-authentication-flow/"),
     ("cloudflared",   check_cloudflared_metrics, "http://127.0.0.1:2000/metrics"),
-    ("minecraft",     check_minecraft, ("mc.example", 25565)),
     ("llm /v1/models", check_llm_models, "http://127.0.0.1:8001/v1/models"),
 ]
 

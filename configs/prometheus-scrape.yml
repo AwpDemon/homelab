@@ -30,11 +30,6 @@ scrape_configs:
     static_configs:
       - targets: ["authentik.lab.local:9301"]
 
-  - job_name: minecraft
-    # mc-exporter — 3rd-party, exposes TPS, player count, chunks loaded
-    static_configs:
-      - targets: ["mc-exporter.lab.local:9150"]
-
   - job_name: nvidia
     # GPU metrics for the local LLM host
     static_configs:

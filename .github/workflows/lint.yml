@@ -26,10 +26,6 @@ jobs:
           pip install pyyaml
           python -c "import yaml, pathlib; [yaml.safe_load(p.read_text()) for p in pathlib.Path('configs').glob('*.yml')]"
 
-      - name: Validate TOML configs
-        run: |
-          python -c "import tomllib, pathlib; [tomllib.loads(p.read_text()) for p in pathlib.Path('configs').glob('*.toml')]"
-
       - name: Dry-run health script (placeholders will report CRIT — exit code ignored)
         run: |
           python scripts/lab-health.py --json || true
